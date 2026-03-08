@@ -64,44 +64,40 @@ class DartONNXSession implements Finalizable {
       DartONNXExecutionProvider.cpu,
     ],
   }) {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    // Create session options
-    final sessionOptions = _createSessionOptions(ort, executionProviders);
+      final sessionOptions = _createSessionOptions(ort, executionProviders);
+      final pathNative = modelPath.toNativeUtf8(allocator: arena).cast<Char>();
+      final outPtr = arena<Pointer<OrtSession>>();
 
-    // Create the session
-    final createSession =
-        api.CreateSession.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtEnv>,
-            Pointer<Char>,
-            Pointer<OrtSessionOptions>,
-            Pointer<Pointer<OrtSession>>,
-          )
-        >();
-
-    final pathNative = modelPath.toNativeUtf8().cast<Char>();
-    final outPtr = calloc<Pointer<OrtSession>>();
-
-    try {
-      final status = createSession(
-        env.pointer,
-        pathNative,
-        sessionOptions,
-        outPtr,
-      );
-      ort.checkStatus(status);
-      return DartONNXSession._(outPtr.value);
-    } finally {
-      calloc.free(pathNative);
-      calloc.free(outPtr);
-      final releaseOpts =
-          api.ReleaseSessionOptions.asFunction<
-            void Function(Pointer<OrtSessionOptions>)
-          >();
-      releaseOpts(sessionOptions);
-    }
+      try {
+        final createSession =
+            api.CreateSession.asFunction<
+              Pointer<OrtStatus> Function(
+                Pointer<OrtEnv>,
+                Pointer<Char>,
+                Pointer<OrtSessionOptions>,
+                Pointer<Pointer<OrtSession>>,
+              )
+            >();
+        final status = createSession(
+          env.pointer,
+          pathNative,
+          sessionOptions,
+          outPtr,
+        );
+        ort.checkStatus(status);
+        return DartONNXSession._(outPtr.value);
+      } finally {
+        final releaseOpts =
+            api.ReleaseSessionOptions.asFunction<
+              void Function(Pointer<OrtSessionOptions>)
+            >();
+        releaseOpts(sessionOptions);
+      }
+    });
   }
 
   /// Create a session from a model in memory (as bytes).
@@ -116,51 +112,45 @@ class DartONNXSession implements Finalizable {
       DartONNXExecutionProvider.cpu,
     ],
   }) {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    // Create session options
-    final sessionOptions = _createSessionOptions(ort, executionProviders);
+      final sessionOptions = _createSessionOptions(ort, executionProviders);
+      final modelData = arena<Uint8>(modelBytes.length);
+      for (var i = 0; i < modelBytes.length; i++) {
+        modelData[i] = modelBytes[i];
+      }
+      final outPtr = arena<Pointer<OrtSession>>();
 
-    // Copy model bytes to native memory
-    final modelData = calloc<Uint8>(modelBytes.length);
-    for (var i = 0; i < modelBytes.length; i++) {
-      modelData[i] = modelBytes[i];
-    }
-
-    // Create the session
-    final createSession =
-        api.CreateSessionFromArray.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtEnv>,
-            Pointer<Void>,
-            int,
-            Pointer<OrtSessionOptions>,
-            Pointer<Pointer<OrtSession>>,
-          )
-        >();
-
-    final outPtr = calloc<Pointer<OrtSession>>();
-
-    try {
-      final status = createSession(
-        env.pointer,
-        modelData.cast(),
-        modelBytes.length,
-        sessionOptions,
-        outPtr,
-      );
-      ort.checkStatus(status);
-      return DartONNXSession._(outPtr.value);
-    } finally {
-      calloc.free(modelData);
-      calloc.free(outPtr);
-      final releaseOpts =
-          api.ReleaseSessionOptions.asFunction<
-            void Function(Pointer<OrtSessionOptions>)
-          >();
-      releaseOpts(sessionOptions);
-    }
+      try {
+        final createSession =
+            api.CreateSessionFromArray.asFunction<
+              Pointer<OrtStatus> Function(
+                Pointer<OrtEnv>,
+                Pointer<Void>,
+                int,
+                Pointer<OrtSessionOptions>,
+                Pointer<Pointer<OrtSession>>,
+              )
+            >();
+        final status = createSession(
+          env.pointer,
+          modelData.cast(),
+          modelBytes.length,
+          sessionOptions,
+          outPtr,
+        );
+        ort.checkStatus(status);
+        return DartONNXSession._(outPtr.value);
+      } finally {
+        final releaseOpts =
+            api.ReleaseSessionOptions.asFunction<
+              void Function(Pointer<OrtSessionOptions>)
+            >();
+        releaseOpts(sessionOptions);
+      }
+    });
   }
 
   /// Run inference on the model.
@@ -168,10 +158,6 @@ class DartONNXSession implements Finalizable {
   /// [inputs] maps input names to their [DartONNXTensor] values.
   /// Returns a map of output names to their result [DartONNXTensor] values.
   Map<String, DartONNXTensor> run(Map<String, DartONNXTensor> inputs) {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
-
-    // Validate inputs
     for (final name in inputs.keys) {
       if (!inputNames.contains(name)) {
         throw ArgumentError(
@@ -180,61 +166,55 @@ class DartONNXSession implements Finalizable {
       }
     }
 
-    final inputCount = inputs.length;
-    final outputCount = outputNames.length;
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    // Prepare input names
-    final inputNamesPtr = calloc<Pointer<Char>>(inputCount);
-    final inputNamesNative = <Pointer<Utf8>>[];
-    var i = 0;
-    final orderedInputNames = <String>[];
-    for (final entry in inputs.entries) {
-      final namePtr = entry.key.toNativeUtf8();
-      inputNamesNative.add(namePtr);
-      inputNamesPtr[i] = namePtr.cast();
-      orderedInputNames.add(entry.key);
-      i++;
-    }
+      final inputCount = inputs.length;
+      final outputCount = outputNames.length;
 
-    // Prepare input values
-    final inputValuesPtr = calloc<Pointer<OrtValue>>(inputCount);
-    i = 0;
-    for (final entry in inputs.entries) {
-      inputValuesPtr[i] = entry.value.pointer;
-      i++;
-    }
+      // Prepare input names
+      final inputNamesPtr = arena<Pointer<Char>>(inputCount);
+      var i = 0;
+      for (final name in inputs.keys) {
+        inputNamesPtr[i] = name.toNativeUtf8(allocator: arena).cast();
+        i++;
+      }
 
-    // Prepare output names
-    final outputNamesPtr = calloc<Pointer<Char>>(outputCount);
-    final outputNamesNative = <Pointer<Utf8>>[];
-    for (var j = 0; j < outputCount; j++) {
-      final namePtr = outputNames[j].toNativeUtf8();
-      outputNamesNative.add(namePtr);
-      outputNamesPtr[j] = namePtr.cast();
-    }
+      // Prepare input values
+      final inputValuesPtr = arena<Pointer<OrtValue>>(inputCount);
+      i = 0;
+      for (final tensor in inputs.values) {
+        inputValuesPtr[i] = tensor.pointer;
+        i++;
+      }
 
-    // Prepare output values (will be filled by ORT)
-    final outputValuesPtr = calloc<Pointer<OrtValue>>(outputCount);
-    for (var j = 0; j < outputCount; j++) {
-      outputValuesPtr[j] = nullptr;
-    }
+      // Prepare output names
+      final outputNamesPtr = arena<Pointer<Char>>(outputCount);
+      for (var j = 0; j < outputCount; j++) {
+        outputNamesPtr[j] = outputNames[j]
+            .toNativeUtf8(allocator: arena)
+            .cast();
+      }
 
-    // Run inference
-    final runFn =
-        api.Run.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtSession>,
-            Pointer<OrtRunOptions>,
-            Pointer<Pointer<Char>>,
-            Pointer<Pointer<OrtValue>>,
-            int,
-            Pointer<Pointer<Char>>,
-            int,
-            Pointer<Pointer<OrtValue>>,
-          )
-        >();
+      // Prepare output values array (ORT fills this)
+      final outputValuesPtr = arena<Pointer<OrtValue>>(outputCount);
 
-    try {
+      // Run inference
+      final runFn =
+          api.Run.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtSession>,
+              Pointer<OrtRunOptions>,
+              Pointer<Pointer<Char>>,
+              Pointer<Pointer<OrtValue>>,
+              int,
+              Pointer<Pointer<Char>>,
+              int,
+              Pointer<Pointer<OrtValue>>,
+            )
+          >();
+
       final status = runFn(
         pointer,
         nullptr, // default run options
@@ -255,19 +235,7 @@ class DartONNXSession implements Finalizable {
         );
       }
       return results;
-    } finally {
-      // Free native strings
-      for (final ptr in inputNamesNative) {
-        calloc.free(ptr);
-      }
-      for (final ptr in outputNamesNative) {
-        calloc.free(ptr);
-      }
-      calloc.free(inputNamesPtr);
-      calloc.free(inputValuesPtr);
-      calloc.free(outputNamesPtr);
-      calloc.free(outputValuesPtr);
-    }
+    });
   }
 
   /// Manually dispose the session's native resources.
@@ -291,155 +259,110 @@ class DartONNXSession implements Finalizable {
   ) {
     final api = ort.api.ref;
 
-    final createOpts =
-        api.CreateSessionOptions.asFunction<
-          Pointer<OrtStatus> Function(Pointer<Pointer<OrtSessionOptions>>)
-        >();
-    final optsPtr = calloc<Pointer<OrtSessionOptions>>();
-    ort.checkStatus(createOpts(optsPtr));
-    final opts = optsPtr.value;
-    calloc.free(optsPtr);
+    return using((Arena arena) {
+      final createOpts =
+          api.CreateSessionOptions.asFunction<
+            Pointer<OrtStatus> Function(Pointer<Pointer<OrtSessionOptions>>)
+          >();
+      final optsPtr = arena<Pointer<OrtSessionOptions>>();
+      ort.checkStatus(createOpts(optsPtr));
+      final opts = optsPtr.value;
 
-    // Set graph optimization level to ORT_ENABLE_ALL (99)
-    final setOptLevel =
-        api.SetSessionGraphOptimizationLevel.asFunction<
-          Pointer<OrtStatus> Function(Pointer<OrtSessionOptions>, int)
-        >();
-    ort.checkStatus(
-      setOptLevel(opts, 99),
-    ); // GraphOptimizationLevel.ORT_ENABLE_ALL
+      final setOptLevel =
+          api.SetSessionGraphOptimizationLevel.asFunction<
+            Pointer<OrtStatus> Function(Pointer<OrtSessionOptions>, int)
+          >();
+      ort.checkStatus(setOptLevel(opts, 99)); // ORT_ENABLE_ALL
 
-    // Append each execution provider using the generic API
-    final appendEP =
-        api.SessionOptionsAppendExecutionProvider.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtSessionOptions>,
-            Pointer<Char>,
-            Pointer<Pointer<Char>>,
-            Pointer<Pointer<Char>>,
-            int,
-          )
-        >();
+      final appendEP =
+          api.SessionOptionsAppendExecutionProvider.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtSessionOptions>,
+              Pointer<Char>,
+              Pointer<Pointer<Char>>,
+              Pointer<Pointer<Char>>,
+              int,
+            )
+          >();
 
-    for (final provider in providers) {
-      if (provider == DartONNXExecutionProvider.cpu) {
-        continue;
-      }
+      for (final provider in providers) {
+        if (provider == DartONNXExecutionProvider.cpu) continue;
 
-      final providerName = provider.ortName.toNativeUtf8().cast<Char>();
-      try {
-        // Try to append — if the provider isn't available, ORT returns an error.
-        // We silently ignore errors for non-CPU providers (they're optional).
+        final providerName = provider.ortName
+            .toNativeUtf8(allocator: arena)
+            .cast<Char>();
         final status = appendEP(opts, providerName, nullptr, nullptr, 0);
         if (status != nullptr) {
-          // Provider unavailable — release error and skip
           final releaseStatus =
               api.ReleaseStatus.asFunction<void Function(Pointer<OrtStatus>)>();
           releaseStatus(status);
         }
-      } finally {
-        calloc.free(providerName);
       }
-    }
 
-    return opts;
+      return opts;
+    });
   }
 
-  List<String> _getInputNames() {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+  List<String> _getInputNames() => _getNames(isInput: true);
+  List<String> _getOutputNames() => _getNames(isInput: false);
 
-    final getCount =
-        api.SessionGetInputCount.asFunction<
-          Pointer<OrtStatus> Function(Pointer<OrtSession>, Pointer<Size>)
-        >();
-    final countPtr = calloc<Size>();
-    ort.checkStatus(getCount(pointer, countPtr));
-    final count = countPtr.value;
-    calloc.free(countPtr);
+  List<String> _getNames({required bool isInput}) {
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    final getAllocator =
-        api.GetAllocatorWithDefaultOptions.asFunction<
-          Pointer<OrtStatus> Function(Pointer<Pointer<OrtAllocator>>)
-        >();
-    final allocPtr = calloc<Pointer<OrtAllocator>>();
-    ort.checkStatus(getAllocator(allocPtr));
-    final allocator = allocPtr.value;
-    calloc.free(allocPtr);
+      final getCount = isInput
+          ? api.SessionGetInputCount.asFunction<
+              Pointer<OrtStatus> Function(Pointer<OrtSession>, Pointer<Size>)
+            >()
+          : api.SessionGetOutputCount.asFunction<
+              Pointer<OrtStatus> Function(Pointer<OrtSession>, Pointer<Size>)
+            >();
 
-    final getName =
-        api.SessionGetInputName.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtSession>,
-            int,
-            Pointer<OrtAllocator>,
-            Pointer<Pointer<Char>>,
-          )
-        >();
+      final countPtr = arena<Size>();
+      ort.checkStatus(getCount(pointer, countPtr));
+      final count = countPtr.value;
 
-    final names = <String>[];
-    for (var i = 0; i < count; i++) {
-      final namePtr = calloc<Pointer<Char>>();
-      ort.checkStatus(getName(pointer, i, allocator, namePtr));
-      names.add(namePtr.value.cast<Utf8>().toDartString());
-
-      // Free the name allocated by ORT
-      final allocFree =
-          api.AllocatorFree.asFunction<
-            Pointer<OrtStatus> Function(Pointer<OrtAllocator>, Pointer<Void>)
+      final getAllocator =
+          api.GetAllocatorWithDefaultOptions.asFunction<
+            Pointer<OrtStatus> Function(Pointer<Pointer<OrtAllocator>>)
           >();
-      allocFree(allocator, namePtr.value.cast());
-      calloc.free(namePtr);
-    }
-    return List.unmodifiable(names);
-  }
+      final allocPtr = arena<Pointer<OrtAllocator>>();
+      ort.checkStatus(getAllocator(allocPtr));
+      final allocator = allocPtr.value;
 
-  List<String> _getOutputNames() {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+      final getName = isInput
+          ? api.SessionGetInputName.asFunction<
+              Pointer<OrtStatus> Function(
+                Pointer<OrtSession>,
+                int,
+                Pointer<OrtAllocator>,
+                Pointer<Pointer<Char>>,
+              )
+            >()
+          : api.SessionGetOutputName.asFunction<
+              Pointer<OrtStatus> Function(
+                Pointer<OrtSession>,
+                int,
+                Pointer<OrtAllocator>,
+                Pointer<Pointer<Char>>,
+              )
+            >();
 
-    final getCount =
-        api.SessionGetOutputCount.asFunction<
-          Pointer<OrtStatus> Function(Pointer<OrtSession>, Pointer<Size>)
-        >();
-    final countPtr = calloc<Size>();
-    ort.checkStatus(getCount(pointer, countPtr));
-    final count = countPtr.value;
-    calloc.free(countPtr);
+      final names = <String>[];
+      for (var i = 0; i < count; i++) {
+        final namePtr = arena<Pointer<Char>>();
+        ort.checkStatus(getName(pointer, i, allocator, namePtr));
+        names.add(namePtr.value.cast<Utf8>().toDartString());
 
-    final getAllocator =
-        api.GetAllocatorWithDefaultOptions.asFunction<
-          Pointer<OrtStatus> Function(Pointer<Pointer<OrtAllocator>>)
-        >();
-    final allocPtr = calloc<Pointer<OrtAllocator>>();
-    ort.checkStatus(getAllocator(allocPtr));
-    final allocator = allocPtr.value;
-    calloc.free(allocPtr);
-
-    final getName =
-        api.SessionGetOutputName.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtSession>,
-            int,
-            Pointer<OrtAllocator>,
-            Pointer<Pointer<Char>>,
-          )
-        >();
-
-    final names = <String>[];
-    for (var i = 0; i < count; i++) {
-      final namePtr = calloc<Pointer<Char>>();
-      ort.checkStatus(getName(pointer, i, allocator, namePtr));
-      names.add(namePtr.value.cast<Utf8>().toDartString());
-
-      final allocFree =
-          api.AllocatorFree.asFunction<
-            Pointer<OrtStatus> Function(Pointer<OrtAllocator>, Pointer<Void>)
-          >();
-      allocFree(allocator, namePtr.value.cast());
-      calloc.free(namePtr);
-    }
-    return List.unmodifiable(names);
+        final allocFree =
+            api.AllocatorFree.asFunction<
+              Pointer<OrtStatus> Function(Pointer<OrtAllocator>, Pointer<Void>)
+            >();
+        allocFree(allocator, namePtr.value.cast());
+      }
+      return List.unmodifiable(names);
+    });
   }
 
   @override

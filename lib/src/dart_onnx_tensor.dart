@@ -21,12 +21,16 @@ import 'ort_ffi.dart';
 /// ```
 class DartONNXTensor implements Finalizable {
   static final _finalizer = NativeFinalizer(_releaseFn);
+  static final _dataFinalizer = NativeFinalizer(calloc.nativeFree);
 
   static final Pointer<NativeFunction<Void Function(Pointer<Void>)>>
   _releaseFn = OrtFFI.instance.api.ref.ReleaseValue.cast();
 
   /// Raw pointer to the OrtValue representing this tensor.
   final Pointer<OrtValue> _ptr;
+
+  /// Raw pointer to the backing data buffer (if created by Dart).
+  Pointer<Void>? _dataPtr;
 
   /// The shape of this tensor.
   final List<int> shape;
@@ -169,11 +173,18 @@ class DartONNXTensor implements Finalizable {
       );
       ort.checkStatus(status);
 
-      return DartONNXTensor._(
+      final tensor = DartONNXTensor._(
         outPtr.value,
         List.unmodifiable(shape),
         elementType,
       );
+
+      // Attach a second finalizer specifically to free the dataPtr when the tensor is garbage collected.
+      _dataFinalizer.attach(tensor, dataPtr.cast(), detach: tensor);
+      tensor._dataPtr = dataPtr
+          .cast(); // Keep reference to free manually in dispose
+
+      return tensor;
     } finally {
       // Release memory info (tensor now owns a reference)
       final releaseMemInfo =
@@ -183,83 +194,78 @@ class DartONNXTensor implements Finalizable {
       releaseMemInfo(memoryInfoPtr.value);
       calloc.free(memoryInfoPtr);
       calloc.free(shapePtr);
-      // Note: dataPtr must NOT be freed here — the OrtValue references it.
-      // It will be valid as long as the OrtValue exists.
-      // We intentionally leak dataPtr; it's freed when the OrtValue is released.
-      // TODO: track dataPtr and free in dispose/finalizer
+      // Note: dataPtr is NOT freed here; it's owned by the OrtValue.
+      // We attached `_dataFinalizer` above to free it when the DartONNXTensor is GC'd.
     }
   }
 
   /// Create a [DartONNXTensor] from a raw [Pointer<OrtValue>] (used internally
   /// for output tensors from session.run).
   factory DartONNXTensor.fromOrtValue(Pointer<OrtValue> ptr) {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    // Get tensor type and shape info
-    final getTypeAndShape =
-        api.GetTensorTypeAndShape.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtValue>,
-            Pointer<Pointer<OrtTensorTypeAndShapeInfo>>,
-          )
-        >();
-    final infoPtr = calloc<Pointer<OrtTensorTypeAndShapeInfo>>();
-    ort.checkStatus(getTypeAndShape(ptr, infoPtr));
+      // Get tensor type and shape info
+      final getTypeAndShape =
+          api.GetTensorTypeAndShape.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtValue>,
+              Pointer<Pointer<OrtTensorTypeAndShapeInfo>>,
+            )
+          >();
+      final infoPtr = arena<Pointer<OrtTensorTypeAndShapeInfo>>();
+      ort.checkStatus(getTypeAndShape(ptr, infoPtr));
 
-    // Get element type
-    final getElementType =
-        api.GetTensorElementType.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtTensorTypeAndShapeInfo>,
-            Pointer<UnsignedInt>,
-          )
-        >();
-    final typePtr = calloc<UnsignedInt>();
-    ort.checkStatus(getElementType(infoPtr.value, typePtr));
-    final elementType = ONNXTensorElementDataType.fromValue(typePtr.value);
+      // Get element type
+      final getElementType =
+          api.GetTensorElementType.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtTensorTypeAndShapeInfo>,
+              Pointer<UnsignedInt>,
+            )
+          >();
+      final typePtr = arena<UnsignedInt>();
+      ort.checkStatus(getElementType(infoPtr.value, typePtr));
+      final elementType = ONNXTensorElementDataType.fromValue(typePtr.value);
 
-    // Get dimensions
-    final getDimCount =
-        api.GetDimensionsCount.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtTensorTypeAndShapeInfo>,
-            Pointer<Size>,
-          )
-        >();
-    final dimCountPtr = calloc<Size>();
-    ort.checkStatus(getDimCount(infoPtr.value, dimCountPtr));
-    final dimCount = dimCountPtr.value;
+      // Get dimensions
+      final getDimCount =
+          api.GetDimensionsCount.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtTensorTypeAndShapeInfo>,
+              Pointer<Size>,
+            )
+          >();
+      final dimCountPtr = arena<Size>();
+      ort.checkStatus(getDimCount(infoPtr.value, dimCountPtr));
+      final dimCount = dimCountPtr.value;
 
-    final getDims =
-        api.GetDimensions.asFunction<
-          Pointer<OrtStatus> Function(
-            Pointer<OrtTensorTypeAndShapeInfo>,
-            Pointer<Int64>,
-            int,
-          )
-        >();
-    final dimsPtr = calloc<Int64>(dimCount);
-    ort.checkStatus(getDims(infoPtr.value, dimsPtr, dimCount));
+      final getDims =
+          api.GetDimensions.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtTensorTypeAndShapeInfo>,
+              Pointer<Int64>,
+              int,
+            )
+          >();
+      final dimsPtr = arena<Int64>(dimCount);
+      ort.checkStatus(getDims(infoPtr.value, dimsPtr, dimCount));
 
-    final shape = <int>[];
-    for (var i = 0; i < dimCount; i++) {
-      shape.add(dimsPtr[i]);
-    }
+      final shape = <int>[];
+      for (var i = 0; i < dimCount; i++) {
+        shape.add(dimsPtr[i]);
+      }
 
-    // Release the type+shape info
-    final releaseInfo =
-        api.ReleaseTensorTypeAndShapeInfo.asFunction<
-          void Function(Pointer<OrtTensorTypeAndShapeInfo>)
-        >();
-    releaseInfo(infoPtr.value);
+      // Release the type+shape info
+      final releaseInfo =
+          api.ReleaseTensorTypeAndShapeInfo.asFunction<
+            void Function(Pointer<OrtTensorTypeAndShapeInfo>)
+          >();
+      releaseInfo(infoPtr.value);
 
-    calloc.free(infoPtr);
-    calloc.free(typePtr);
-    calloc.free(dimCountPtr);
-    calloc.free(dimsPtr);
-
-    return DartONNXTensor._(ptr, List.unmodifiable(shape), elementType);
+      return DartONNXTensor._(ptr, List.unmodifiable(shape), elementType);
+    });
   }
 
   /// Get the tensor data as a Dart [TypedData] list.
@@ -271,16 +277,19 @@ class DartONNXTensor implements Finalizable {
   /// - Int64 → [Int64List]
   /// - Uint8 → [Uint8List]
   TypedData get data {
-    final ort = OrtFFI.instance;
-    final api = ort.api.ref;
+    return using((Arena arena) {
+      final ort = OrtFFI.instance;
+      final api = ort.api.ref;
 
-    final getData =
-        api.GetTensorMutableData.asFunction<
-          Pointer<OrtStatus> Function(Pointer<OrtValue>, Pointer<Pointer<Void>>)
-        >();
+      final getData =
+          api.GetTensorMutableData.asFunction<
+            Pointer<OrtStatus> Function(
+              Pointer<OrtValue>,
+              Pointer<Pointer<Void>>,
+            )
+          >();
 
-    final dataPtr = calloc<Pointer<Void>>();
-    try {
+      final dataPtr = arena<Pointer<Void>>();
       ort.checkStatus(getData(pointer, dataPtr));
 
       final totalElements = shape.fold<int>(1, (a, b) => a * b);
@@ -302,9 +311,7 @@ class DartONNXTensor implements Finalizable {
             'Unsupported tensor element type: $elementType',
           );
       }
-    } finally {
-      calloc.free(dataPtr);
-    }
+    });
   }
 
   /// Manually dispose the underlying native memory.
@@ -314,9 +321,16 @@ class DartONNXTensor implements Finalizable {
     if (_disposed) return;
     _disposed = true;
     _finalizer.detach(this);
+
     final release = OrtFFI.instance.api.ref.ReleaseValue
         .asFunction<void Function(Pointer<OrtValue>)>();
     release(_ptr);
+
+    if (_dataPtr != null) {
+      _dataFinalizer.detach(this);
+      calloc.free(_dataPtr!);
+      _dataPtr = null;
+    }
   }
 
   @override
