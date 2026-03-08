@@ -29,10 +29,13 @@ class OrtFFI {
       final apiBase = bindings.OrtGetApiBase();
       final getApi = apiBase.ref.GetApi
           .asFunction<Pointer<OrtApi> Function(int)>();
-      final api = getApi(ORT_API_VERSION);
+      var api = getApi(ORT_API_VERSION);
+      if (api == nullptr) {
+        api = getApi(20);          // Fallback to older widely-available version
+      }
       if (api == nullptr) {
         throw DartONNXException(
-          'Failed to get ORT API version $ORT_API_VERSION. '
+          'Failed to get ORT API version $ORT_API_VERSION or 20. '
           'The ONNX Runtime library may be too old.',
         );
       }
