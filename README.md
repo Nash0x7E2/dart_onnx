@@ -20,8 +20,18 @@ TODO: List what your package can do. Maybe include images, gifs, or videos.
 
 ## Getting started
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
+### Prerequisites
+
+**macOS:**
+You must install the ONNX Runtime library before running:
+```bash
+brew install onnxruntime
+```
+
+If you encounter `Failed to load dynamic library 'libonnxruntime.dylib'` after installation, you can explicitly provide the path to the library by setting the `DART_ONNX_LIB_PATH` environment variable:
+```bash
+export DART_ONNX_LIB_PATH=/opt/homebrew/lib/libonnxruntime.dylib
+```
 
 ## Usage
 
