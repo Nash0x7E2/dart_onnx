@@ -111,4 +111,14 @@ void main() {
 
 ## Additional Information
 
+### Generating Test Models
+
+The tiny ONNX models used for unit testing (`identity.onnx`, `add.onnx`, `multi_output.onnx`) are checked into the repository under `test/assets/models/`. If you need to regenerate them or add new ones, we provide a Python script:
+
+```bash
+# From the project root, ensure you have python with the 'onnx' package installed
+# (e.g. via `pip install onnx` or `uv run --with onnx python3 tool/generate_test_models.py`)
+python3 tool/generate_test_models.py
+```
+
 For more details on ONNX Runtime capabilities, refer to the [ONNX Runtime documentation](https://onnxruntime.ai/docs/). Feel free to open issues or contribute to this package in the [repository](https://github.com/nash/dart_onnx).
