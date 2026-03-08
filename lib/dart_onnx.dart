@@ -15,7 +15,7 @@
 ///   print(outputs);
 /// }
 /// ```
-library dart_onnx;
+library;
 
 export 'src/dart_onnx_env.dart';
 export 'src/dart_onnx_session.dart';

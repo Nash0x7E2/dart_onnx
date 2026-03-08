@@ -752,10 +752,7 @@ final class OrtTensorRTProviderOptions extends ffi.Struct {
   external int trt_force_sequential_engine_build;
 }
 
-final class OrtCustomHandleType extends ffi.Struct {
-  @ffi.Char()
-  external int __place_holder;
-}
+final class OrtCustomHandleType extends ffi.Opaque {}
 
 typedef OrtCustomThreadHandle = ffi.Pointer<OrtCustomHandleType>;
 typedef OrtThreadWorkerFnFunction =
