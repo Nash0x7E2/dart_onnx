@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import 'ffi/ort_bindings.dart';
@@ -69,7 +70,9 @@ class DartONNXSession implements Finalizable {
       final api = ort.api.ref;
 
       final sessionOptions = _createSessionOptions(ort, executionProviders);
-      final pathNative = modelPath.toNativeUtf8(allocator: arena).cast<Char>();
+      final pathNative = Platform.isWindows
+          ? modelPath.toNativeUtf16(allocator: arena).cast<Char>()
+          : modelPath.toNativeUtf8(allocator: arena).cast<Char>();
       final outPtr = arena<Pointer<OrtSession>>();
 
       try {
