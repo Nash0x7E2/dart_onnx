@@ -248,10 +248,6 @@ class DartONNXSession implements Finalizable {
     release(_ptr);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Private helpers
-  // ──────────────────────────────────────────────────────────────────────────
-
   /// Create an OrtSessionOptions with the given execution providers.
   static Pointer<OrtSessionOptions> _createSessionOptions(
     OrtFFI ort,

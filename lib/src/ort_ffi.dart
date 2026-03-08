@@ -41,10 +41,6 @@ class OrtFFI {
     return _instance!;
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Convenience helpers wrapping raw C function pointers
-  // ──────────────────────────────────────────────────────────────────────────
-
   /// Check the OrtStatus returned from an API call and throw on error.
   void checkStatus(Pointer<OrtStatus> status) {
     if (status == nullptr) return; // success
@@ -62,10 +58,7 @@ class OrtFFI {
     throw DartONNXException(message, errorCode: code);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
   // Library loading
-  // ──────────────────────────────────────────────────────────────────────────
-
   static DynamicLibrary _loadOrtLibrary() {
     // Try custom environment variable first
     final customPath = Platform.environment['DART_ONNX_LIB_PATH'];
