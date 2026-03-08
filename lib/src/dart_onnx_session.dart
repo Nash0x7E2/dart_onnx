@@ -322,18 +322,20 @@ class DartONNXSession implements Finalizable {
         >();
 
     for (final provider in providers) {
+      if (provider == DartONNXExecutionProvider.cpu) {
+        continue;
+      }
+
       final providerName = provider.ortName.toNativeUtf8().cast<Char>();
       try {
         // Try to append — if the provider isn't available, ORT returns an error.
         // We silently ignore errors for non-CPU providers (they're optional).
         final status = appendEP(opts, providerName, nullptr, nullptr, 0);
-        if (status != nullptr && provider != DartONNXExecutionProvider.cpu) {
-          // Non-CPU provider unavailable — release error and skip
+        if (status != nullptr) {
+          // Provider unavailable — release error and skip
           final releaseStatus =
               api.ReleaseStatus.asFunction<void Function(Pointer<OrtStatus>)>();
           releaseStatus(status);
-        } else {
-          ort.checkStatus(status);
         }
       } finally {
         calloc.free(providerName);
