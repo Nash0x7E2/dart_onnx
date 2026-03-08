@@ -22,9 +22,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:dart_onnx/dart_onnx.dart';
 
-// ---------------------------------------------------------------------------
 // Model configuration (matches config.json from HuggingFace)
-// ---------------------------------------------------------------------------
 
 /// Number of transformer layers (num_hidden_layers).
 const int kNumLayers = 30;
@@ -41,7 +39,6 @@ const int kVocabSize = 49152;
 /// End-of-sequence token ID.
 const int kEosTokenId = 0;
 
-// ---------------------------------------------------------------------------
 // A minimal hard-coded tokenization of the prompt "Hello, I am".
 //
 // These IDs were looked up in SmolLM2's GPT-2-style BPE vocabulary
@@ -49,7 +46,6 @@ const int kEosTokenId = 0;
 //
 // In a real application you would use a proper tokenizer library that reads
 // `tokenizer.json` to tokenize arbitrary text.
-// ---------------------------------------------------------------------------
 const List<int> kPromptTokenIds = [
   12906, // "Hello"
   13, // ","
@@ -58,7 +54,7 @@ const List<int> kPromptTokenIds = [
 ];
 
 void main() {
-  // ── 1. Locate model file ──────────────────────────────────────────────────
+  // Locate model file
   final scriptDir = File.fromUri(Platform.script).parent;
   final modelPath = '${scriptDir.path}/onnx/model_quantized.onnx';
 
@@ -70,12 +66,12 @@ void main() {
     exit(1);
   }
 
-  // ── 2. Initialize ONNX Runtime environment ────────────────────────────────
+  // Initialize ONNX Runtime environment
   print('Initializing ONNX Runtime...');
   final env = DartONNX(loggingLevel: DartONNXLoggingLevel.warning);
   print('ORT version : ${env.ortVersion}');
 
-  // ── 3. Load the session ───────────────────────────────────────────────────
+  // Load the session
   print('Loading model: $modelPath');
   final session = DartONNXSession.fromFile(
     env,
@@ -89,7 +85,7 @@ void main() {
   print('Input  names : ${session.inputNames}');
   print('Output names : ${session.outputNames}');
 
-  // ── 4. Build input tensors ────────────────────────────────────────────────
+  // Build input tensors
   final seqLen = kPromptTokenIds.length;
   const int batch = 1;
 
@@ -138,7 +134,7 @@ void main() {
     }
   }
 
-  // ── 5. Run inference ──────────────────────────────────────────────────────
+  // Run inference
   print('\nRunning forward pass on prompt: "Hello, I am"');
   print('Prompt token IDs: $kPromptTokenIds\n');
 
@@ -148,7 +144,7 @@ void main() {
 
   print('Inference time: ${stopwatch.elapsedMilliseconds} ms');
 
-  // ── 6. Read logits and show top-5 next-token predictions ─────────────────
+  // Read logits and show top-5 next-token predictions
   final logitsTensor = outputs['logits'];
   if (logitsTensor == null) {
     throw StateError('Expected "logits" in outputs but got: ${outputs.keys}');
@@ -177,7 +173,7 @@ void main() {
     print('  token $tokenId → ${score.toStringAsFixed(4)}');
   }
 
-  // ── 7. Greedy next-token ──────────────────────────────────────────────────
+  // Greedy next-token
   final nextTokenId = indexed.first.$1;
   print('\nGreedy next token ID : $nextTokenId');
   if (nextTokenId == kEosTokenId) {
@@ -185,7 +181,7 @@ void main() {
   }
   print('Decode with `tokenizer.json` to convert token IDs back to a string.');
 
-  // ── 8. Cleanup ────────────────────────────────────────────────────────────
+  // Cleanup
   for (final t in inputs.values) {
     t.dispose();
   }
