@@ -73,7 +73,19 @@ class OrtFFI {
       return DynamicLibrary.open(customPath);
     }
 
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (Platform.isMacOS) {
+      try {
+        return DynamicLibrary.open('libonnxruntime.dylib');
+      } catch (_) {
+        // Fallback for macOS Homebrew installations on Apple Silicon
+        try {
+          return DynamicLibrary.open('/opt/homebrew/lib/libonnxruntime.dylib');
+        } catch (_) {
+          // Fallback for macOS Homebrew installations on Intel
+          return DynamicLibrary.open('/usr/local/lib/libonnxruntime.dylib');
+        }
+      }
+    } else if (Platform.isIOS) {
       return DynamicLibrary.open('libonnxruntime.dylib');
     } else if (Platform.isLinux) {
       return DynamicLibrary.open('libonnxruntime.so');
