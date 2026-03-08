@@ -1,0 +1,39 @@
+# FFI bindings configuration for ONNX Runtime C API
+name: OrtBindings
+description: Auto-generated FFI bindings for ONNX Runtime C API.
+output: 'lib/src/ffi/ort_bindings.dart'
+headers:
+  entry-points:
+    - 'src/onnxruntime_headers/onnxruntime_c_api.h'
+  include-directives:
+    - 'src/onnxruntime_headers/onnxruntime_c_api.h'
+
+# We only want the ORT API symbols, not platform-level stuff
+functions:
+  include:
+    - 'OrtGetApiBase'
+enums:
+  include:
+    - 'Ort.*'
+    - 'ONNX.*'
+    - 'ONNXTensor.*'
+structs:
+  include:
+    - 'Ort.*'
+unions:
+  include:
+    - 'Ort.*'
+typedefs:
+  include:
+    - 'Ort.*'
+macros:
+  include:
+    - 'ORT_API_VERSION'
+
+compiler-opts:
+  - '-isysroot/Applications/Xcode-26.3.0-Release.Candidate.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
+
+preamble: |
+  // GENERATED CODE - DO NOT MODIFY BY HAND
+  // ignore_for_file: type=lint
+  // coverage:ignore-file
