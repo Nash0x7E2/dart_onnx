@@ -1,6 +1,6 @@
 name: dart_onnx
 description: A cross-platform Dart package for running ONNX models using ONNX Runtime via Dart FFI.
-version: 0.1.1
+version: 0.1.2
 repository: https://github.com/nash0x7e2/dart_onnx
 
 environment:
