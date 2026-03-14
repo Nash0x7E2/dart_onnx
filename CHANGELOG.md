@@ -1,3 +1,7 @@
+## 0.1.1
+
+- Fixed an issue where model paths were not correctly parsed on Windows.
+
 ## 0.1.0
 
 - Initial release.
