@@ -31,7 +31,7 @@ class OrtFFI {
           .asFunction<Pointer<OrtApi> Function(int)>();
       var api = getApi(ORT_API_VERSION);
       if (api == nullptr) {
-        api = getApi(20);          // Fallback to older widely-available version
+        api = getApi(20); // Fallback to older widely-available version
       }
       if (api == nullptr) {
         throw DartONNXException(
