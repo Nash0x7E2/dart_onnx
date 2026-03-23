@@ -12,3 +12,6 @@ pubspec.lock
 
 # ONNX models
 example/onnx/
+
+# IDE files
+*.iml

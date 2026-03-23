@@ -1,0 +1,15 @@
+name: dart_inference
+
+packages:
+  - packages/*
+
+scripts:
+  analyze:
+    exec: dart analyze
+    description: Run dart analyze for all packages.
+  format:
+    exec: dart format .
+    description: Format all dart code.
+  test:
+    exec: dart test
+    description: Run all tests.
