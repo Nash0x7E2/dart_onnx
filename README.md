@@ -1,6 +1,6 @@
-# dart_inference
+# Dart_Inference ⚡
 
-A Dart monorepo for high-performance AI inference and ML integrations. 
+A collection of Dart packages for running ONNX model and other high-performance AI inference. 
 
 Currently, it contains bindings to ONNX Runtime via FFI, with future plans to add high-level Chat APIs and abstractions for interacting with various models (including LLMs) directly in Dart.
 
@@ -9,7 +9,7 @@ Currently, it contains bindings to ONNX Runtime via FFI, with future plans to ad
 This repository contains the following packages:
 
 - [`dart_onnx`](./packages/dart_onnx): A cross-platform Dart package for running ONNX models using ONNX Runtime via Dart FFI.
-*(More packages, such as a high-level chat API, will be added here as they are developed.)*
+*(More packages, such as a high-level chat API, will be added in the future.)*
 
 ## Getting Started
 
