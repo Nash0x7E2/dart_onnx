@@ -6,6 +6,7 @@ environment:
 
 workspace:
   - packages/dart_onnx
+  - packages/dart_onnx_llm
 
 dev_dependencies:
   lints: ^5.0.0
