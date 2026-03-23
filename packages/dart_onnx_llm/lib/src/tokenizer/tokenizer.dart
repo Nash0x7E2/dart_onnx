@@ -3,43 +3,66 @@ import 'dart:io';
 
 import '../config/tokenizer_config.dart';
 
-/// A Byte-Level BPE tokenizer compatible with Hugging Face `tokenizer.json`.
+/// A Byte-Level BPE tokenizer compatible with Hugging Face tokenizer.json.
 ///
-/// Encodes text into token IDs and decodes token IDs back to text.
-///
-/// ```dart
-/// final tokenizer = await Tokenizer.fromFile('path/to/tokenizer.json');
-/// final ids = tokenizer.encode('Hello, world!');
-/// final text = tokenizer.decode(ids);
-/// ```
+/// Implements the full pre-tokenization pipeline used by GPT-2/SmolLM2/Llama:
+///   1. Split out special tokens.
+///   2. Apply the GPT-2 regex to split on word boundaries.
+///   3. Split individual digits (Digits pre-tokenizer).
+///   4. Convert each word to byte-level characters.
+///   5. Apply BPE merges.
+///   6. Look up token IDs.
 class Tokenizer {
-  /// The vocabulary: maps token string → token ID.
+  /// The vocabulary: maps token string to token ID.
   final Map<String, int> _vocab;
 
-  /// The reverse vocabulary: maps token ID → token string.
+  /// The reverse vocabulary: maps token ID to token string.
   final Map<int, String> _reverseVocab;
 
-  /// Ordered list of BPE merge pairs.
-  final List<(String, String)> _merges;
+  /// Merge rank lookup: maps "first second" to priority index.
+  final Map<String, int> _mergeRanks;
 
-  /// Set of special token strings (e.g., `<s>`, `</s>`).
+  /// Set of special token strings.
   final Set<String> _specialTokens;
+
+  /// Whether to split individual digits before byte-level encoding.
+  final bool _splitDigits;
 
   /// Optional tokenizer config for chat templates.
   final TokenizerConfig? tokenizerConfig;
 
+  /// The GPT-2 pre-tokenization regex.
+  ///
+  /// This is the exact regex used by the HuggingFace ByteLevel pre-tokenizer
+  /// (from tokenizers/src/pre_tokenizers/byte_level.rs).
+  ///
+  /// It splits text into: contractions, optional-space+letters,
+  /// optional-space+numbers, optional-space+punctuation, trailing whitespace
+  /// (collapsed), and individual whitespace chars.
+  static final _gpt2Regex = RegExp(
+    r"'(?:[sdmt]|ll|ve|re)"
+    r"| ?\p{L}+"
+    r"| ?\p{N}+"
+    r"| ?[^\s\p{L}\p{N}]+"
+    r"|\s+(?!\S)"
+    r"|\s+",
+    unicode: true,
+  );
+
   Tokenizer._({
     required Map<String, int> vocab,
     required Map<int, String> reverseVocab,
-    required List<(String, String)> merges,
+    required Map<String, int> mergeRanks,
     required Set<String> specialTokens,
+    required bool splitDigits,
     this.tokenizerConfig,
-  }) : _vocab = vocab,
-       _reverseVocab = reverseVocab,
-       _merges = merges,
-       _specialTokens = specialTokens;
+  })  : _vocab = vocab,
+        _reverseVocab = reverseVocab,
+        _mergeRanks = mergeRanks,
+        _specialTokens = specialTokens,
+        _splitDigits = splitDigits;
 
-  /// Loads a [Tokenizer] from a Hugging Face `tokenizer.json` file.
+  /// Loads a [Tokenizer] from a Hugging Face tokenizer.json file.
   ///
   /// Optionally accepts a [TokenizerConfig] for chat template support.
   static Future<Tokenizer> fromFile(
@@ -51,7 +74,7 @@ class Tokenizer {
     return Tokenizer.fromJson(json, config: config);
   }
 
-  /// Parses a [Tokenizer] from a decoded `tokenizer.json` map.
+  /// Parses a [Tokenizer] from a decoded tokenizer.json map.
   factory Tokenizer.fromJson(
     Map<String, dynamic> json, {
     TokenizerConfig? config,
@@ -62,14 +85,29 @@ class Tokenizer {
     final vocab = vocabJson.map((k, v) => MapEntry(k, v as int));
     final reverseVocab = vocab.map((k, v) => MapEntry(v, k));
 
-    // Parse BPE merges
+    // Parse BPE merges and build rank lookup
     final mergesJson = model['merges'] as List<dynamic>;
-    final merges = <(String, String)>[];
-    for (final merge in mergesJson) {
-      final parts = (merge as String).split(' ');
-      if (parts.length == 2) {
-        merges.add((parts[0], parts[1]));
+    final mergeRanks = <String, int>{};
+    for (var i = 0; i < mergesJson.length; i++) {
+      final entry = mergesJson[i];
+      String first;
+      String second;
+
+      if (entry is List) {
+        // Format: [["a", "b"], ...] (used by SmolLM2 and newer tokenizers).
+        first = entry[0] as String;
+        second = entry[1] as String;
+      } else if (entry is String) {
+        // Format: ["a b", ...] (space-separated, used by older tokenizers).
+        final parts = entry.split(' ');
+        if (parts.length != 2) continue;
+        first = parts[0];
+        second = parts[1];
+      } else {
+        continue;
       }
+
+      mergeRanks['$first $second'] = i;
     }
 
     // Parse added_tokens for special tokens
@@ -89,11 +127,32 @@ class Tokenizer {
       }
     }
 
+    // Detect pre-tokenizer configuration.
+    var splitDigits = false;
+    final preTokenizer = json['pre_tokenizer'] as Map<String, dynamic>?;
+    if (preTokenizer != null) {
+      final type = preTokenizer['type'] as String?;
+      if (type == 'Digits') {
+        splitDigits = preTokenizer['individual_digits'] == true;
+      } else if (type == 'Sequence') {
+        final pretokenizers =
+            preTokenizer['pretokenizers'] as List<dynamic>? ?? [];
+        for (final pt in pretokenizers) {
+          final ptMap = pt as Map<String, dynamic>;
+          if (ptMap['type'] == 'Digits' &&
+              ptMap['individual_digits'] == true) {
+            splitDigits = true;
+          }
+        }
+      }
+    }
+
     return Tokenizer._(
       vocab: vocab,
       reverseVocab: reverseVocab,
-      merges: merges,
+      mergeRanks: mergeRanks,
       specialTokens: specialTokens,
+      splitDigits: splitDigits,
       tokenizerConfig: config,
     );
   }
@@ -110,38 +169,50 @@ class Tokenizer {
   /// Encodes a [text] string into a list of token IDs.
   ///
   /// This implements byte-level BPE tokenization:
-  /// 1. Converts the text into byte-level characters.
-  /// 2. Iteratively merges the most preferred pairs according to the merge list.
-  /// 3. Looks up each resulting token in the vocabulary.
+  /// 1. Splits out special tokens.
+  /// 2. Applies the GPT-2 regex to split on word boundaries.
+  /// 3. Optionally splits individual digits.
+  /// 4. Converts each piece to byte-level characters.
+  /// 5. Iteratively merges the best pairs according to the merge list.
+  /// 6. Looks up each resulting token in the vocabulary.
   List<int> encode(String text) {
     if (text.isEmpty) return [];
 
-    // Split the text into pre-tokenized chunks, preserving special tokens.
-    final chunks = _preTokenize(text);
+    // Step 1: Split out special tokens.
+    final segments = _splitSpecialTokens(text);
     final result = <int>[];
 
-    for (final chunk in chunks) {
-      // Check if this chunk is a special token.
-      if (_specialTokens.contains(chunk)) {
-        final id = _vocab[chunk];
+    for (final segment in segments) {
+      // Check if this segment is a special token.
+      if (_specialTokens.contains(segment)) {
+        final id = _vocab[segment];
         if (id != null) result.add(id);
         continue;
       }
 
-      // Convert to byte-level representation.
-      final byteTokens = _textToByteTokens(chunk);
+      // Step 2: Apply GPT-2 regex pre-tokenization.
+      final words = _regexPreTokenize(segment);
 
-      // Apply BPE merges.
-      final merged = _applyBpeMerges(byteTokens);
+      for (final word in words) {
+        // Step 3: Optionally split digits.
+        final pieces = _splitDigits ? _splitIndividualDigits(word) : [word];
 
-      // Look up each token in the vocabulary.
-      for (final token in merged) {
-        final id = _vocab[token];
-        if (id != null) {
-          result.add(id);
+        for (final piece in pieces) {
+          // Step 4: Convert to byte-level representation.
+          final byteTokens = _textToByteTokens(piece);
+
+          // Step 5: Apply BPE merges.
+          final merged = _applyBpeMerges(byteTokens);
+
+          // Step 6: Look up each token in the vocabulary.
+          for (final token in merged) {
+            final id = _vocab[token];
+            if (id != null) {
+              result.add(id);
+            }
+            // Unknown tokens are silently dropped for now.
+          }
         }
-        // Unknown tokens are silently dropped for now.
-        // A more robust implementation would use an <unk> fallback.
       }
     }
 
@@ -161,11 +232,11 @@ class Tokenizer {
   }
 
   // ---------------------------------------------------------------------------
-  // Private helpers
+  // Pre-tokenization helpers
   // ---------------------------------------------------------------------------
 
-  /// Pre-tokenizes text by splitting out special tokens as separate chunks.
-  List<String> _preTokenize(String text) {
+  /// Splits text into segments, isolating special tokens as separate chunks.
+  List<String> _splitSpecialTokens(String text) {
     if (_specialTokens.isEmpty) return [text];
 
     final chunks = <String>[];
@@ -201,6 +272,49 @@ class Tokenizer {
     return chunks;
   }
 
+  /// Applies the GPT-2 regex to split text into pre-tokenized words.
+  ///
+  /// Each match becomes a separate "word" that will be independently
+  /// byte-encoded and BPE-merged. This is critical for matching the
+  /// reference Python tokenizer output.
+  List<String> _regexPreTokenize(String text) {
+    final matches = _gpt2Regex.allMatches(text);
+    return matches.map((m) => m.group(0)!).toList();
+  }
+
+  /// Splits a string so that each ASCII digit (0-9) is its own element.
+  ///
+  /// Non-digit characters are kept grouped together. This matches the
+  /// HuggingFace Digits(individual_digits=true) pre-tokenizer.
+  List<String> _splitIndividualDigits(String text) {
+    final result = <String>[];
+    final buffer = StringBuffer();
+
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (char.codeUnitAt(0) >= 0x30 && char.codeUnitAt(0) <= 0x39) {
+        // It's a digit. Flush any buffered non-digit text first.
+        if (buffer.isNotEmpty) {
+          result.add(buffer.toString());
+          buffer.clear();
+        }
+        result.add(char);
+      } else {
+        buffer.write(char);
+      }
+    }
+
+    if (buffer.isNotEmpty) {
+      result.add(buffer.toString());
+    }
+
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Byte-level encoding/decoding
+  // ---------------------------------------------------------------------------
+
   /// Converts a text chunk to byte-level token representation.
   ///
   /// Uses the GPT-2 byte-to-unicode mapping.
@@ -225,25 +339,44 @@ class Tokenizer {
     }
   }
 
-  /// Applies BPE merges to a list of tokens iteratively.
+  // ---------------------------------------------------------------------------
+  // BPE merges
+  // ---------------------------------------------------------------------------
+
+  /// Applies BPE merges to a list of tokens using merge ranks for efficiency.
+  ///
+  /// Instead of iterating through all merges linearly, this implementation
+  /// finds the highest-priority (lowest rank) pair in the current word and
+  /// merges it, repeating until no more merges apply.
   List<String> _applyBpeMerges(List<String> tokens) {
     if (tokens.length <= 1) return tokens;
 
     var word = List<String>.from(tokens);
 
-    for (final (first, second) in _merges) {
-      var i = 0;
-      while (i < word.length - 1) {
-        if (word[i] == first && word[i + 1] == second) {
-          word = [
-            ...word.sublist(0, i),
-            '$first$second',
-            ...word.sublist(i + 2),
-          ];
-        } else {
-          i++;
+    while (true) {
+      // Find the pair with the lowest merge rank.
+      int? bestRank;
+      int? bestIndex;
+
+      for (var i = 0; i < word.length - 1; i++) {
+        final key = '${word[i]} ${word[i + 1]}';
+        final rank = _mergeRanks[key];
+        if (rank != null && (bestRank == null || rank < bestRank)) {
+          bestRank = rank;
+          bestIndex = i;
         }
       }
+
+      if (bestIndex == null) break; // No more merges.
+
+      // Merge the pair at bestIndex.
+      final merged = '${word[bestIndex]}${word[bestIndex + 1]}';
+      word = [
+        ...word.sublist(0, bestIndex),
+        merged,
+        ...word.sublist(bestIndex + 2),
+      ];
+
       if (word.length == 1) break;
     }
 
@@ -254,7 +387,7 @@ class Tokenizer {
   // GPT-2 byte-to-unicode mapping
   // ---------------------------------------------------------------------------
 
-  /// Lazily computed GPT-2 byte ↔ unicode mapping.
+  /// Lazily computed GPT-2 byte <-> unicode mapping.
   static final Map<int, String> _byteToUnicode = _buildByteToUnicode();
   static final Map<int, int> _unicodeToByte = _buildUnicodeToByte();
 
@@ -264,15 +397,15 @@ class Tokenizer {
     final cs = <int>[];
 
     // Printable ASCII ranges.
-    for (var b = '!'.codeUnitAt(0); b <= '~'.codeUnitAt(0); b++) {
+    for (var b = 0x21; b <= 0x7E; b++) {
       bs.add(b);
       cs.add(b);
     }
-    for (var b = '¡'.codeUnitAt(0); b <= '¬'.codeUnitAt(0); b++) {
+    for (var b = 0xA1; b <= 0xAC; b++) {
       bs.add(b);
       cs.add(b);
     }
-    for (var b = '®'.codeUnitAt(0); b <= 'ÿ'.codeUnitAt(0); b++) {
+    for (var b = 0xAE; b <= 0xFF; b++) {
       bs.add(b);
       cs.add(b);
     }
