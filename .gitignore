@@ -10,8 +10,11 @@
 # https://dart.dev/guides/libraries/private-files#pubspeclock.
 pubspec.lock
 
-# ONNX models
+# ONNX models and downloaded model files (large binaries)
 example/onnx/
+example/model/
+*.onnx
+*.onnx_data
 
 # IDE files
 *.iml
