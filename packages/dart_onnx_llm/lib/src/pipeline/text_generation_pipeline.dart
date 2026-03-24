@@ -119,15 +119,29 @@ class TextGenerationPipeline {
   }
 
   /// Creates a stateful [ChatSession] for multi-turn conversations.
+  ///
+  /// Automatically configures stop tokens from the tokenizer config so
+  /// generation halts at the end-of-turn marker (e.g. `<|im_end|>`).
   ChatSession createChatSession({
     String? systemPrompt,
     GenerationConfig config = const GenerationConfig(),
   }) {
+    // Resolve stop token IDs from the tokenizer config.
+    final stopTokenIds = <int>[];
+    final eosToken = tokenizerConfig?.eosToken;
+    if (eosToken != null) {
+      final eosId = tokenizer.tokenToId(eosToken);
+      if (eosId != null) {
+        stopTokenIds.add(eosId);
+      }
+    }
+
     return ChatSession(
       model: model,
       tokenizer: tokenizer,
       systemPrompt: systemPrompt,
       config: config,
+      stopTokenIds: stopTokenIds,
     );
   }
 

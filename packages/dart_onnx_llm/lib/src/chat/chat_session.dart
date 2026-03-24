@@ -25,6 +25,9 @@ class ChatSession {
   final Tokenizer _tokenizer;
   final GenerationConfig _defaultConfig;
 
+  /// Token IDs that signal end-of-turn (e.g. `<|im_end|>`).
+  final List<int> _stopTokenIds;
+
   /// The full conversation history.
   final List<ChatMessage> _messages = [];
 
@@ -33,9 +36,11 @@ class ChatSession {
     required Tokenizer tokenizer,
     String? systemPrompt,
     GenerationConfig config = const GenerationConfig(),
+    List<int> stopTokenIds = const [],
   }) : _model = model,
        _tokenizer = tokenizer,
-       _defaultConfig = config {
+       _defaultConfig = config,
+       _stopTokenIds = stopTokenIds {
     if (systemPrompt != null) {
       _messages.add(ChatMessage.system(systemPrompt));
     }
@@ -55,6 +60,18 @@ class ChatSession {
   }) async* {
     config ??= _defaultConfig;
 
+    // Merge session-level stop tokens with any config-level ones.
+    final effectiveConfig = _stopTokenIds.isNotEmpty
+        ? GenerationConfig(
+            maxTokens: config.maxTokens,
+            temperature: config.temperature,
+            topP: config.topP,
+            topK: config.topK,
+            repetitionPenalty: config.repetitionPenalty,
+            stopTokenIds: [...?config.stopTokenIds, ..._stopTokenIds],
+          )
+        : config;
+
     // Append the user message to history.
     _messages.add(ChatMessage.user(message));
 
@@ -65,12 +82,12 @@ class ChatSession {
     final inputIds = _tokenizer.encode(prompt);
 
     // Generate tokens.
-    final sampler = Sampler(config);
+    final sampler = Sampler(effectiveConfig);
     final responseBuffer = StringBuffer();
 
     await for (final tokenId in _model.generate(
       inputIds,
-      config: config,
+      config: effectiveConfig,
       sampler: sampler,
     )) {
       final decoded = _tokenizer.decode([tokenId]);
@@ -93,7 +110,9 @@ class ChatSession {
 
   /// Clears the conversation history, optionally keeping the system prompt.
   void clearHistory({bool keepSystemPrompt = true}) {
-    if (keepSystemPrompt && _messages.isNotEmpty && _messages.first.role == ChatRole.system) {
+    if (keepSystemPrompt &&
+        _messages.isNotEmpty &&
+        _messages.first.role == ChatRole.system) {
       final system = _messages.first;
       _messages.clear();
       _messages.add(system);
@@ -102,20 +121,27 @@ class ChatSession {
     }
   }
 
-  /// Formats a list of messages into a prompt string.
+  /// Formats a list of messages into a prompt string using the ChatML format.
   ///
-  /// Uses the chat template from [TokenizerConfig] if available, otherwise
-  /// falls back to a simple ChatML format.
+  /// Produces the exact format expected by SmolLM2-Instruct (and other
+  /// ChatML-based models):
+  ///
+  /// ```
+  /// <|im_start|>system
+  /// You are a helpful assistant.<|im_end|>
+  /// <|im_start|>user
+  /// Hello!<|im_end|>
+  /// <|im_start|>assistant
+  /// ```
   String _formatPrompt(List<ChatMessage> messages) {
     // TODO(nash): Use Jinja-style chat template from tokenizer_config.json
-    // when available. For now, fall back to ChatML.
+    // when available. For now, use the ChatML format directly.
     final buffer = StringBuffer();
     for (final msg in messages) {
-      buffer.writeln('<|im_start|>${msg.role.name}');
-      buffer.writeln(msg.content);
-      buffer.writeln('<|im_end|>');
+      buffer.write('<|im_start|>${msg.role.name}\n');
+      buffer.write('${msg.content}<|im_end|>\n');
     }
-    buffer.writeln('<|im_start|>assistant');
+    buffer.write('<|im_start|>assistant\n');
     return buffer.toString();
   }
 }
