@@ -66,9 +66,35 @@ class OrtFFI {
     // Try custom environment variable first
     final customPath = Platform.environment['DART_ONNX_LIB_PATH'];
     if (customPath != null) {
-      return DynamicLibrary.open(customPath);
+      try {
+        return DynamicLibrary.open(customPath);
+      } on ArgumentError {
+        throw DartONNXException(
+          'Could not load ONNX Runtime from DART_ONNX_LIB_PATH="$customPath".\n'
+          'Verify that the file exists and is a valid ONNX Runtime shared library.',
+        );
+      }
     }
 
+    try {
+      return _openPlatformLibrary();
+    } on ArgumentError {
+      throw DartONNXException(
+        'ONNX Runtime library not found.\n'
+        '\n'
+        '${_installHint()}'
+        '\n'
+        'Alternatively, set the DART_ONNX_LIB_PATH environment variable to the\n'
+        'full path of the ONNX Runtime shared library.\n'
+        '\n'
+        'For more information, visit:\n'
+        'https://onnxruntime.ai/docs/install/',
+      );
+    }
+  }
+
+  /// Attempt to open the ONNX Runtime library using platform-specific paths.
+  static DynamicLibrary _openPlatformLibrary() {
     if (Platform.isMacOS) {
       try {
         return DynamicLibrary.open('libonnxruntime.dylib');
@@ -94,5 +120,22 @@ class OrtFFI {
         'Unsupported platform: ${Platform.operatingSystem}',
       );
     }
+  }
+
+  /// Return a platform-specific hint for installing ONNX Runtime.
+  static String _installHint() {
+    if (Platform.isMacOS) {
+      return 'Install ONNX Runtime on macOS with Homebrew:\n'
+          '  brew install onnxruntime\n';
+    } else if (Platform.isLinux) {
+      return 'Install ONNX Runtime on Linux:\n'
+          '  apt install libonnxruntime  (Debian/Ubuntu)\n'
+          '  — or download from the ONNX Runtime GitHub releases page.\n';
+    } else if (Platform.isWindows) {
+      return 'Install ONNX Runtime on Windows:\n'
+          '  Download the latest release from the ONNX Runtime GitHub releases\n'
+          '  page and add the directory containing onnxruntime.dll to your PATH.\n';
+    }
+    return '';
   }
 }
