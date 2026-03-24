@@ -56,11 +56,11 @@ class Tokenizer {
     required Set<String> specialTokens,
     required bool splitDigits,
     this.tokenizerConfig,
-  })  : _vocab = vocab,
-        _reverseVocab = reverseVocab,
-        _mergeRanks = mergeRanks,
-        _specialTokens = specialTokens,
-        _splitDigits = splitDigits;
+  }) : _vocab = vocab,
+       _reverseVocab = reverseVocab,
+       _mergeRanks = mergeRanks,
+       _specialTokens = specialTokens,
+       _splitDigits = splitDigits;
 
   /// Loads a [Tokenizer] from a Hugging Face tokenizer.json file.
   ///
@@ -139,8 +139,7 @@ class Tokenizer {
             preTokenizer['pretokenizers'] as List<dynamic>? ?? [];
         for (final pt in pretokenizers) {
           final ptMap = pt as Map<String, dynamic>;
-          if (ptMap['type'] == 'Digits' &&
-              ptMap['individual_digits'] == true) {
+          if (ptMap['type'] == 'Digits' && ptMap['individual_digits'] == true) {
             splitDigits = true;
           }
         }

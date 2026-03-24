@@ -92,10 +92,7 @@ void main() {
 
     test('special tokens are encoded correctly', () {
       // '<|im_start|>system' => [1, 9690]
-      expect(
-        tokenizer.encode('<|im_start|>system'),
-        equals([1, 9690]),
-      );
+      expect(tokenizer.encode('<|im_start|>system'), equals([1, 9690]));
     });
   });
 
@@ -142,11 +139,7 @@ void main() {
 /// Tries to find the model directory containing tokenizer.json.
 String? _findModelDir() {
   // Check relative to the test file location (standard package layout).
-  final candidates = [
-    'example/model',
-    '../example/model',
-    'test/fixtures',
-  ];
+  final candidates = ['example/model', '../example/model', 'test/fixtures'];
 
   for (final candidate in candidates) {
     if (File('$candidate/tokenizer.json').existsSync()) {

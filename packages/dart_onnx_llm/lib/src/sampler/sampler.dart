@@ -18,14 +18,12 @@ class Sampler {
   factory Sampler.greedy() => Sampler(GenerationConfig.greedy);
 
   /// Creates a sampler using top-p (nucleus) sampling.
-  factory Sampler.topP(double p, {double temperature = 1.0}) => Sampler(
-    GenerationConfig(topP: p, temperature: temperature),
-  );
+  factory Sampler.topP(double p, {double temperature = 1.0}) =>
+      Sampler(GenerationConfig(topP: p, temperature: temperature));
 
   /// Creates a sampler using top-k sampling.
-  factory Sampler.topK(int k, {double temperature = 1.0}) => Sampler(
-    GenerationConfig(topK: k, temperature: temperature),
-  );
+  factory Sampler.topK(int k, {double temperature = 1.0}) =>
+      Sampler(GenerationConfig(topK: k, temperature: temperature));
 
   /// Selects the next token ID from a vocabulary-sized [logits] array.
   ///

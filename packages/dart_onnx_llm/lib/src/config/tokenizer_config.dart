@@ -54,8 +54,7 @@ class TokenizerConfig {
     if (addedTokensDecoder != null) {
       for (final entry in addedTokensDecoder.entries) {
         final tokenData = entry.value;
-        if (tokenData is Map<String, dynamic> &&
-            tokenData['special'] == true) {
+        if (tokenData is Map<String, dynamic> && tokenData['special'] == true) {
           final content = tokenData['content'] as String?;
           if (content != null) {
             specialTokens[content] = content;
