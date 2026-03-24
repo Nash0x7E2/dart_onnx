@@ -58,7 +58,12 @@ void main() async {
   // Create a stateful chat session.
   final session = pipeline.createChatSession(
     systemPrompt: 'You are a helpful, friendly, and concise AI assistant.',
-    config: GenerationConfig(maxTokens: 128, temperature: 0.7, topP: 0.9),
+    config: GenerationConfig(
+      maxTokens: 128,
+      temperature: 0.7,
+      topP: 0.9,
+      repetitionPenalty: 1.15,
+    ),
   );
 
   // Interactive loop.
