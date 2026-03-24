@@ -68,7 +68,7 @@ class CausalLM {
         config.stopTokenIds ??
         (this.config.eosTokenId != null ? [this.config.eosTokenId!] : <int>[]);
 
-    final generatedTokenIds = <int>[];
+    final contextTokenIds = List<int>.from(inputIds);
 
     // --- State for KV cache ---
     var currentInputIds = List<int>.from(inputIds);
@@ -153,7 +153,7 @@ class CausalLM {
       // Sample the next token.
       final nextTokenId = sampler.sample(
         lastTokenLogits,
-        generatedTokenIds: generatedTokenIds,
+        generatedTokenIds: contextTokenIds,
       );
 
       // Dispose input tensors (except reused KV cache ones).
@@ -186,7 +186,7 @@ class CausalLM {
       // Update state for next iteration.
       pastSequenceLength += seqLen;
       currentInputIds = [nextTokenId];
-      generatedTokenIds.add(nextTokenId);
+      contextTokenIds.add(nextTokenId);
 
       // Check for stop condition.
       if (stopTokenIds.contains(nextTokenId)) break;
