@@ -22,10 +22,8 @@ class CausalLM {
   final DartONNXSession _session;
   final ModelConfig config;
 
-  CausalLM._({
-    required DartONNXSession session,
-    required this.config,
-  }) : _session = session;
+  CausalLM._({required DartONNXSession session, required this.config})
+    : _session = session;
 
   /// Loads a [CausalLM] from a `.onnx` model file and a [ModelConfig].
   factory CausalLM.fromFile(
@@ -66,7 +64,8 @@ class CausalLM {
   }) async* {
     sampler ??= Sampler(config);
 
-    final stopTokenIds = config.stopTokenIds ??
+    final stopTokenIds =
+        config.stopTokenIds ??
         (this.config.eosTokenId != null ? [this.config.eosTokenId!] : <int>[]);
 
     final generatedTokenIds = <int>[];
@@ -106,7 +105,11 @@ class CausalLM {
         );
       }
 
-      // past_key_values — either from previous step or zeroed out
+      // past_key_values — either from previous step or zeroed out.
+      //
+      // NOTE: Some execution providers (e.g. CoreML) do not support
+      // zero-element tensors. If using CoreML, the first inference step
+      // will fail. Use CPU-only execution for models with KV cache inputs.
       final kvInputNames = _session.inputNames
           .where((n) => n.startsWith('past_key_values.'))
           .toList();

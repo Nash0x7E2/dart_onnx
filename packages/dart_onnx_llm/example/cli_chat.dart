@@ -20,7 +20,6 @@ library;
 
 import 'dart:io';
 
-import 'package:dart_onnx/dart_onnx.dart';
 import 'package:dart_onnx_llm/dart_onnx_llm.dart';
 
 void main() async {
@@ -39,18 +38,15 @@ void main() async {
 
   print('╔════════════════════════════════════════════════╗');
   print('║         dart_onnx_llm — CLI Chat Demo         ║');
-  print('║  Loading SmolLM2-135M... (this may take a moment)  ║');
+  print('║  Loading SmolLM2-135M-Instruct... (this may take a moment)  ║');
   print('╚════════════════════════════════════════════════╝');
   print('');
 
   // Load the pipeline from the model directory.
-  final pipeline = await TextGenerationPipeline.fromDirectory(
-    modelDir,
-    executionProviders: [
-      DartONNXExecutionProvider.coreML, // Apple Neural Engine (if available)
-      DartONNXExecutionProvider.cpu, // Fallback
-    ],
-  );
+  //
+  // NOTE: CoreML EP is not used here because it does not support
+  // zero-element tensors needed for the initial KV cache step.
+  final pipeline = await TextGenerationPipeline.fromDirectory(modelDir);
 
   print('✓ Model loaded successfully!');
   print('');
@@ -62,11 +58,7 @@ void main() async {
   // Create a stateful chat session.
   final session = pipeline.createChatSession(
     systemPrompt: 'You are a helpful, friendly, and concise AI assistant.',
-    config: GenerationConfig(
-      maxTokens: 128,
-      temperature: 0.7,
-      topP: 0.9,
-    ),
+    config: GenerationConfig(maxTokens: 128, temperature: 0.7, topP: 0.9),
   );
 
   // Interactive loop.
