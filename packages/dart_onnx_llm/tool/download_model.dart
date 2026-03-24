@@ -1,5 +1,6 @@
-/// Downloads the SmolLM2-135M quantized ONNX model files plus tokenizer
-/// and config files from HuggingFace into the `example/model/` directory.
+/// Downloads the SmolLM2-135M-Instruct quantized ONNX model files plus
+/// tokenizer and config files from HuggingFace into the `example/model/`
+/// directory.
 ///
 /// Run from the package root:
 ///   dart run tool/download_model.dart
@@ -8,12 +9,11 @@ library;
 import 'dart:io';
 
 const _baseUrl =
-    'https://huggingface.co/onnx-community/SmolLM2-135M-ONNX/resolve/main';
+    'https://huggingface.co/onnx-community/SmolLM2-135M-Instruct-ONNX/resolve/main';
 
 /// Files to download: (remotePath, localName).
 const _files = [
   ('onnx/model_quantized.onnx', 'model_quantized.onnx'),
-  ('onnx/model_quantized.onnx_data', 'model_quantized.onnx_data'),
   ('config.json', 'config.json'),
   ('tokenizer.json', 'tokenizer.json'),
   ('tokenizer_config.json', 'tokenizer_config.json'),
