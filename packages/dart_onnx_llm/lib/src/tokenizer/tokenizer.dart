@@ -28,6 +28,12 @@ class Tokenizer {
   /// Whether to split individual digits before byte-level encoding.
   final bool _splitDigits;
 
+  /// Whether to use the simple Split pre-tokenizer instead of the GPT-2 regex.
+  ///
+  /// Models like Gemma use a `Split` pre-tokenizer that splits on whitespace
+  /// boundaries, keeping leading spaces attached to the following word.
+  final bool _useSplitPreTokenizer;
+
   /// Optional tokenizer config for chat templates.
   final TokenizerConfig? tokenizerConfig;
 
@@ -55,12 +61,14 @@ class Tokenizer {
     required Map<String, int> mergeRanks,
     required Set<String> specialTokens,
     required bool splitDigits,
+    required bool useSplitPreTokenizer,
     this.tokenizerConfig,
   }) : _vocab = vocab,
        _reverseVocab = reverseVocab,
        _mergeRanks = mergeRanks,
        _specialTokens = specialTokens,
-       _splitDigits = splitDigits;
+       _splitDigits = splitDigits,
+       _useSplitPreTokenizer = useSplitPreTokenizer;
 
   /// Loads a [Tokenizer] from a Hugging Face tokenizer.json file.
   ///
@@ -129,11 +137,14 @@ class Tokenizer {
 
     // Detect pre-tokenizer configuration.
     var splitDigits = false;
+    var useSplitPreTokenizer = false;
     final preTokenizer = json['pre_tokenizer'] as Map<String, dynamic>?;
     if (preTokenizer != null) {
       final type = preTokenizer['type'] as String?;
       if (type == 'Digits') {
         splitDigits = preTokenizer['individual_digits'] == true;
+      } else if (type == 'Split') {
+        useSplitPreTokenizer = true;
       } else if (type == 'Sequence') {
         final pretokenizers =
             preTokenizer['pretokenizers'] as List<dynamic>? ?? [];
@@ -141,6 +152,9 @@ class Tokenizer {
           final ptMap = pt as Map<String, dynamic>;
           if (ptMap['type'] == 'Digits' && ptMap['individual_digits'] == true) {
             splitDigits = true;
+          }
+          if (ptMap['type'] == 'Split') {
+            useSplitPreTokenizer = true;
           }
         }
       }
@@ -152,6 +166,7 @@ class Tokenizer {
       mergeRanks: mergeRanks,
       specialTokens: specialTokens,
       splitDigits: splitDigits,
+      useSplitPreTokenizer: useSplitPreTokenizer,
       tokenizerConfig: config,
     );
   }
@@ -189,8 +204,10 @@ class Tokenizer {
         continue;
       }
 
-      // Step 2: Apply GPT-2 regex pre-tokenization.
-      final words = _regexPreTokenize(segment);
+      // Step 2: Apply pre-tokenization (GPT-2 regex or Split).
+      final words = _useSplitPreTokenizer
+          ? _splitPreTokenize(segment)
+          : _regexPreTokenize(segment);
 
       for (final word in words) {
         // Step 3: Optionally split digits.
