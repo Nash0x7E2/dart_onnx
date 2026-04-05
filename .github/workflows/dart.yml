@@ -11,6 +11,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  ORT_VERSION: "1.20.1"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,6 +32,16 @@ jobs:
       - name: Activate Melos
         run: dart pub global activate melos
 
+      # Download the ONNX Runtime shared library for Linux so that tests
+      # that load the native library via FFI can find it.
+      - name: Download ONNX Runtime (Linux x64)
+        run: |
+          curl -fsSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            -o ort.tgz
+          tar -xzf ort.tgz
+          echo "ORT_LIB_PATH=$(pwd)/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" >> "$GITHUB_ENV"
+
       # Uncomment this step to verify the use of 'dart format' on each commit.
       # - name: Verify formatting
       #   run: melos run format
@@ -38,4 +51,6 @@ jobs:
         run: melos run analyze
 
       - name: Run tests
+        env:
+          DART_ONNX_LIB_PATH: ${{ env.ORT_LIB_PATH }}
         run: melos run test
