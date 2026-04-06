@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dart_onnx/dart_onnx.dart';
 
 import '../chat/chat_session.dart';
+import '../chat/prompt_formatter.dart';
 import '../config/generation_config.dart';
 import '../config/model_config.dart';
 import '../config/tokenizer_config.dart';
@@ -50,18 +51,22 @@ class TextGenerationPipeline {
   /// Loads a [TextGenerationPipeline] from a directory containing
   /// model files.
   ///
-  /// Expected directory structure:
+  /// Expected directory structure for monolithic models (e.g. SmolLM2):
   /// ```
   /// model_dir/
   /// ├── config.json
   /// ├── tokenizer.json
-  /// ├── tokenizer_config.json  (optional)
-  /// └── model.onnx  (or model_quantized.onnx)
+  /// └── model.onnx
   /// ```
   ///
-  /// The [modelFileName] defaults to auto-detecting the `.onnx` file.
-  /// You can specify it explicitly if the directory contains multiple
-  /// ONNX files.
+  /// Expected directory structure for split-graph models (e.g. Gemma 4):
+  /// ```
+  /// model_dir/
+  /// ├── config.json
+  /// ├── tokenizer.json
+  /// ├── embed_tokens.onnx
+  /// └── decoder_model_merged.onnx
+  /// ```
   static Future<TextGenerationPipeline> fromDirectory(
     String directoryPath, {
     String? modelFileName,
@@ -99,16 +104,31 @@ class TextGenerationPipeline {
       config: tokenizerConfig,
     );
 
-    // Find the model .onnx file
-    final modelPath = _resolveModelPath(dir, modelFileName);
+    // Detect architecture: Split-Graph vs Monolithic
+    final decoderMergedPath = '${dir.path}/decoder_model_merged.onnx';
+    final embedTokensPath = '${dir.path}/embed_tokens.onnx';
+    
+    CausalLM model;
 
-    // Load the model
-    final model = CausalLM.fromFile(
-      modelPath,
-      config: modelConfig,
-      executionProviders: executionProviders,
-      loggingLevel: loggingLevel,
-    );
+    if (File(decoderMergedPath).existsSync() && File(embedTokensPath).existsSync()) {
+      // Split-graph architecture (Gemma 4)
+      model = CausalLM.fromPipeline(
+        decoderMergedPath,
+        embedPath: embedTokensPath,
+        config: modelConfig,
+        executionProviders: executionProviders,
+        loggingLevel: loggingLevel,
+      );
+    } else {
+      // Monolithic architecture (SmolLM2, Llama)
+      final modelPath = _resolveModelPath(dir, modelFileName);
+      model = CausalLM.fromFile(
+        modelPath,
+        config: modelConfig,
+        executionProviders: executionProviders,
+        loggingLevel: loggingLevel,
+      );
+    }
 
     return TextGenerationPipeline(
       model: model,
@@ -136,9 +156,12 @@ class TextGenerationPipeline {
       }
     }
 
+    final formatter = PromptFormatter.fromTemplate(tokenizerConfig?.chatTemplate);
+
     return ChatSession(
       model: model,
       tokenizer: tokenizer,
+      formatter: formatter,
       systemPrompt: systemPrompt,
       config: config,
       stopTokenIds: stopTokenIds,

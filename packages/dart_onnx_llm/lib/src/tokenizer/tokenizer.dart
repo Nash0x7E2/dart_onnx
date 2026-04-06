@@ -298,6 +298,36 @@ class Tokenizer {
     return matches.map((m) => m.group(0)!).toList();
   }
 
+  /// Splits text on whitespace boundaries, keeping leading whitespace
+  /// attached to the following word.
+  ///
+  /// This matches HuggingFace's `Split` pre-tokenizer behavior used by
+  /// Gemma models. For example: `"hello world"` → `["hello", " world"]`.
+  List<String> _splitPreTokenize(String text) {
+    if (text.isEmpty) return [];
+
+    final result = <String>[];
+    final buffer = StringBuffer();
+
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      final isSpace = char == ' ' || char == '\t' || char == '\n';
+
+      if (isSpace && buffer.isNotEmpty) {
+        // Flush current word, start a new one with this whitespace.
+        result.add(buffer.toString());
+        buffer.clear();
+      }
+      buffer.write(char);
+    }
+
+    if (buffer.isNotEmpty) {
+      result.add(buffer.toString());
+    }
+
+    return result;
+  }
+
   /// Splits a string so that each ASCII digit (0-9) is its own element.
   ///
   /// Non-digit characters are kept grouped together. This matches the
